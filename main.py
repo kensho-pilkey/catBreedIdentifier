@@ -5,7 +5,6 @@ import cv2
 from PIL import Image, ImageTk
 import numpy as np
 import json
-import threading
 import tkinter as tk
 from tkinter import filedialog
 import time
@@ -52,32 +51,53 @@ class CatBreedIdentifierApp:
         self.video_running = False
         self.cap = None
 
-        # Create buttons
-        video_button = tk.Button(root, text="Video", command=self.run_video)
-        video_button.pack(pady=10)
+        # Set default window size
+        self.root.geometry('900x700')
 
-        upload_button = tk.Button(root, text="Upload", command=self.upload_image)
-        upload_button.pack(pady=10)
+        # Create frames
+        self.button_frame = tk.Frame(root)
+        self.button_frame.pack(side=tk.TOP, pady=20)
 
-        exit_button = tk.Button(root, text="Exit", command=self.exit_app)
-        exit_button.pack(pady=10)
+        self.display_frame = tk.Frame(root, bd=2, relief=tk.SUNKEN)
+        self.display_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Create buttons with styling
+        button_style = {'width': 20, 'height': 2, 'font': ('Arial', 14), 'bg': '#4CAF50', 'fg': 'black'}
+        self.video_button = tk.Button(self.button_frame, text="Video", command=self.run_video, **button_style)
+        self.video_button.pack(pady=10)
+
+        self.upload_button = tk.Button(self.button_frame, text="Upload", command=self.upload_image, **button_style)
+        self.upload_button.pack(pady=10)
+
+        self.reset_button = tk.Button(self.button_frame, text="Reset", command=self.reset_app, **button_style)
+        # Don't pack the reset button initially
 
         # Create a label to display the video frames or images
-        self.display_label = tk.Label(root)
-        self.display_label.pack()
+        self.display_label = tk.Label(self.display_frame, bd=2, relief=tk.SUNKEN)
+        # Initially hide the display label
+        self.display_label.pack_forget()
 
     def run_video(self):
         if not self.video_running:
+            # Hide buttons
+            self.video_button.pack_forget()
+            self.upload_button.pack_forget()
+
+            # Show reset button
+            self.reset_button.pack(pady=10)
+
             self.video_running = True
             self.cap = cv2.VideoCapture(0)
+            # Show the display label
+            self.display_label.pack(fill=tk.BOTH, expand=True)
             self.process_video()
 
     def process_video(self):
         if self.video_running and self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret:
-                # Resize frame to reduce computation
-                frame_resized = cv2.resize(frame, (640, 480))
+                # Resize frame to fit display area
+                frame_resized = cv2.resize(frame, (900, 600))
 
                 # Perform object detection
                 results = detection_model(frame_resized, verbose=False)
@@ -123,14 +143,18 @@ class CatBreedIdentifierApp:
                                 # Draw a semi-transparent rectangle
                                 overlay = frame_resized.copy()
                                 rectangle_height = topk * 25 + 20
-                                cv2.rectangle(overlay, (x1, y1 - rectangle_height), (x2, y1), (0, 0, 0), -1)
+                                y_start = y1 - rectangle_height if y1 - rectangle_height > 0 else y1
+                                cv2.rectangle(overlay, (x1, y_start), (x2, y1), (0, 0, 0), -1)
                                 alpha = 0.5  # Transparency factor
                                 frame_resized = cv2.addWeighted(overlay, alpha, frame_resized, 1 - alpha, 0)
 
                                 # Display the predictions
                                 for i, (label, confidence) in enumerate(top_predictions):
                                     text = f"{label}: {confidence*100:.1f}%"
-                                    cv2.putText(frame_resized, text, (x1 + 5, y1 - 10 - i*25), cv2.FONT_HERSHEY_SIMPLEX,
+                                    y_text = y1 - 10 - i * 25
+                                    if y_text < 0:
+                                        y_text = y1 + 20 + i * 25  # Adjust if text goes off the screen
+                                    cv2.putText(frame_resized, text, (x1 + 5, y_text), cv2.FONT_HERSHEY_SIMPLEX,
                                                 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
                 # Convert the image to RGB and then to PIL format
@@ -141,6 +165,9 @@ class CatBreedIdentifierApp:
                 # Update the image in the label
                 self.display_label.imgtk = imgtk
                 self.display_label.configure(image=imgtk)
+            else:
+                # If frame not read successfully, stop video
+                self.video_running = False
 
             # Schedule the next frame update
             self.root.after(10, self.process_video)
@@ -150,6 +177,13 @@ class CatBreedIdentifierApp:
                 self.cap.release()
 
     def upload_image(self):
+        # Hide buttons
+        self.video_button.pack_forget()
+        self.upload_button.pack_forget()
+
+        # Show reset button
+        self.reset_button.pack(pady=10)
+
         file_path = filedialog.askopenfilename()
         if file_path:
             image = cv2.imread(file_path)
@@ -157,8 +191,8 @@ class CatBreedIdentifierApp:
                 print("Failed to load image file:", file_path)
                 return
 
-            # Resize image to fit the display
-            frame_resized = cv2.resize(image, (640, 480))
+            # Resize image to fit the display area
+            frame_resized = cv2.resize(image, (900, 600))
 
             # Perform object detection
             results = detection_model(frame_resized, verbose=False)
@@ -204,14 +238,18 @@ class CatBreedIdentifierApp:
                             # Draw a semi-transparent rectangle
                             overlay = frame_resized.copy()
                             rectangle_height = topk * 25 + 20
-                            cv2.rectangle(overlay, (x1, y1 - rectangle_height), (x2, y1), (0, 0, 0), -1)
+                            y_start = y1 - rectangle_height if y1 - rectangle_height > 0 else y1
+                            cv2.rectangle(overlay, (x1, y_start), (x2, y1), (0, 0, 0), -1)
                             alpha = 0.5  # Transparency factor
                             frame_resized = cv2.addWeighted(overlay, alpha, frame_resized, 1 - alpha, 0)
 
                             # Display the predictions
                             for i, (label, confidence) in enumerate(top_predictions):
                                 text = f"{label}: {confidence*100:.1f}%"
-                                cv2.putText(frame_resized, text, (x1 + 5, y1 - 10 - i*25), cv2.FONT_HERSHEY_SIMPLEX,
+                                y_text = y1 - 10 - i * 25
+                                if y_text < 0:
+                                    y_text = y1 + 20 + i * 25  # Adjust if text goes off the screen
+                                cv2.putText(frame_resized, text, (x1 + 5, y_text), cv2.FONT_HERSHEY_SIMPLEX,
                                             0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
             # Convert the image to RGB and then to PIL format
@@ -222,6 +260,30 @@ class CatBreedIdentifierApp:
             # Update the image in the label
             self.display_label.imgtk = imgtk
             self.display_label.configure(image=imgtk)
+
+            # Show the display label
+            self.display_label.pack(fill=tk.BOTH, expand=True)
+        else:
+            # If no file selected, reset to initial state
+            self.reset_app()
+
+    def reset_app(self):
+        # Stop video if running
+        if self.video_running:
+            self.video_running = False
+            if self.cap:
+                self.cap.release()
+
+        # Clear the display label
+        self.display_label.pack_forget()
+        self.display_label.imgtk = None
+
+        # Hide reset button
+        self.reset_button.pack_forget()
+
+        # Show buttons
+        self.video_button.pack(pady=10)
+        self.upload_button.pack(pady=10)
 
     def exit_app(self):
         self.video_running = False
